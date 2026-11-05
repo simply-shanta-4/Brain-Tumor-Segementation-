@@ -1,0 +1,3 @@
+method,mean_dice,median_dice,false_alarms,empty_slices
+FLAIR threshold (k=1.25),0.328,0.319,413,483
+U-Net (ResNet-34),0.827,0.870,10,483

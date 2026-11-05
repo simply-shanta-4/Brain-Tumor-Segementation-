@@ -1,0 +1,17 @@
+# Core Deep Learning & Segmentation
+torch>=2.0.0
+torchvision>=0.15.0
+segmentation-models-pytorch>=0.3.3
+
+# Data Processing & Computer Vision
+numpy>=1.23.0
+pandas>=1.5.0
+scipy>=1.9.0
+scikit-learn>=1.2.0
+scikit-image>=0.20.0
+matplotlib>=3.6.0
+tqdm>=4.64.0
+tabulate>=0.9.0
+
+# Web Application Demo & Deployment
+gradio>=4.0.0
