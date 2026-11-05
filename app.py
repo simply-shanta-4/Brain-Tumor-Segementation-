@@ -7,7 +7,6 @@ to detect and outline brain tumor boundaries.
 """
 
 import os
-import urllib.request
 import numpy as np
 import torch
 import gradio as gr
@@ -18,177 +17,86 @@ from skimage.segmentation import find_boundaries
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Model configuration and weight path
-MODEL_WEIGHTS = os.getenv("MODEL_WEIGHTS", "best_unet.pt")
-HF_WEIGHTS_URL = os.getenv(
-    "HF_WEIGHTS_URL",
-    "https://huggingface.co/simply-shanta-4/brain-tumor-segmentation/resolve/main/best_unet.pt"
-)
+WEIGHTS = os.getenv("MODEL_WEIGHTS", "best_unet.pt")
 
-def ensure_weights_available():
-    """Checks for local weights or attempts to fetch from Hugging Face if available."""
-    if os.path.exists(MODEL_WEIGHTS):
-        return True
-    
-    # Try downloading if URL is reachable
-    print(f"Model weights '{MODEL_WEIGHTS}' not found locally.")
-    try:
-        print(f"Attempting to download weights from {HF_WEIGHTS_URL} ...")
-        urllib.request.urlretrieve(HF_WEIGHTS_URL, MODEL_WEIGHTS)
-        if os.path.exists(MODEL_WEIGHTS) and os.path.getsize(MODEL_WEIGHTS) > 1000:
-            print("Successfully downloaded model weights.")
-            return True
-        else:
-            if os.path.exists(MODEL_WEIGHTS):
-                os.remove(MODEL_WEIGHTS)
-    except Exception as e:
-        print(f"Automatic download from Hugging Face skipped: {e}")
-        print("Please download best_unet.pt manually and place it in the project root directory.")
-    return False
+if not os.path.exists(WEIGHTS):
+    raise FileNotFoundError(
+        f"Model weights '{WEIGHTS}' not found.\n"
+        f"Please download best_unet.pt from your Hugging Face model repository/Space "
+        f"and place it in the project root directory next to app.py."
+    )
 
-def load_segmentation_model():
-    """Initializes and loads the U-Net model with weights if available."""
-    has_weights = ensure_weights_available()
-    try:
-        import segmentation_models_pytorch as smp
-        net = smp.Unet("resnet34", encoder_weights=None, in_channels=3, classes=1)
-        if has_weights and os.path.exists(MODEL_WEIGHTS):
-            net.load_state_dict(torch.load(MODEL_WEIGHTS, map_location=device))
-            print(f"Loaded trained U-Net weights from '{MODEL_WEIGHTS}' onto {device}.")
-            net.to(device).eval()
-            return net
-        else:
-            print(f"Notice: Running without '{MODEL_WEIGHTS}'. Falling back to FLAIR baseline thresholding.")
-            return None
-    except Exception as e:
-        print(f"Warning: Could not load segmentation model: {e}")
-        return None
+import segmentation_models_pytorch as smp
 
-model = load_segmentation_model()
+model = smp.Unet("resnet34", encoder_weights=None, in_channels=3, classes=1)
+model.load_state_dict(torch.load(WEIGHTS, map_location=device))
+model.to(device).eval()
+print(f"Loaded model weights from '{WEIGHTS}' onto {device}.")
 
-def preprocess_slice(raw_img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def segment(path):
     """
-    Normalizes the input MRI slice matching training distribution:
-    Per-channel z-score computed over non-zero brain tissue.
+    Inference pipeline:
+    1. Reads 3-channel MRI slice (.tif or .png).
+    2. Performs per-patient z-score normalization on brain tissue.
+    3. Predicts tumor mask with U-Net.
+    4. Overlays outer boundary in red.
     """
-    if raw_img.ndim == 2:
-        raw_img = np.stack([raw_img] * 3, -1)
-    elif raw_img.shape[-1] > 3:
-        raw_img = raw_img[..., :3]
+    if path is None:
+        return None, "Please upload a valid MRI slice."
 
-    img = raw_img[..., :3].astype(np.float32)
-    flair = img[..., 1].copy()  # FLAIR channel for display
+    raw = imread(path)
+    if raw.ndim == 2:
+        raw = np.stack([raw] * 3, -1)
+    elif raw.shape[-1] > 3:
+        raw = raw[..., :3]
 
+    img = raw[..., :3].astype(np.float32)
+    flair = img[..., 1].copy()  # FLAIR channel shown to the user
+
+    # Per-channel normalization matching training distribution
     for c in range(3):
-        channel = img[..., c]
-        brain_pixels = channel[channel > 0]
-        if brain_pixels.size > 0:
-            mean = brain_pixels.mean()
-            std = brain_pixels.std() + 1e-8
-            img[..., c] = np.where(channel > 0, (channel - mean) / std, 0.0)
+        ch = img[..., c]
+        brain = ch[ch > 0]
+        if brain.size:
+            img[..., c] = np.where(ch > 0, (ch - brain.mean()) / (brain.std() + 1e-8), 0)
 
-    return img, flair
+    with torch.no_grad():
+        x = torch.from_numpy(img).permute(2, 0, 1)[None].to(device)
+        mask = (torch.sigmoid(model(x)) > 0.5)[0, 0].cpu().numpy()
 
-def segment_mri(input_file):
-    """
-    Gradio prediction pipeline:
-    1. Read input image (support path or numpy array)
-    2. Preprocess & normalize MRI slice
-    3. Run U-Net inference to predict binary tumor mask
-    4. Highlight tumor contour in red
-    5. Return marked visualization and quantitative statistics
-    """
-    if input_file is None:
-        return None, "Please upload a valid MRI slice (.tif, .png, or .jpg)."
+    flair_ptp = np.ptp(flair) + 1e-8
+    base = (255 * (flair - flair.min()) / flair_ptp).astype(np.uint8)
+    out = np.stack([base] * 3, -1)
+    out[find_boundaries(mask, mode="outer")] = [255, 0, 0]  # Red outline
 
-    try:
-        if isinstance(input_file, str):
-            raw = imread(input_file)
-        else:
-            raw = np.array(input_file)
+    area = int(mask.sum())
+    result_text = f"Tumor area: {area:,} pixels" if area else "No tumor detected"
+    return out, result_text
 
-        norm_img, flair = preprocess_slice(raw)
-
-        # Run inference
-        is_unet = model is not None
-        if is_unet:
-            with torch.no_grad():
-                tensor_input = torch.from_numpy(norm_img).permute(2, 0, 1).unsqueeze(0).to(device)
-                logits = model(tensor_input)
-                pred_prob = torch.sigmoid(logits)
-                mask = (pred_prob > 0.5)[0, 0].cpu().numpy().astype(bool)
-            engine_tag = "Trained U-Net (ResNet-34)"
-        else:
-            # Fallback heuristic: FLAIR intensity threshold
-            brain_mask = flair > 10
-            if brain_mask.sum() > 0:
-                thresh = flair[brain_mask].mean() + 1.25 * flair[brain_mask].std()
-                mask = (flair > thresh) & brain_mask
-            else:
-                mask = np.zeros_like(flair, dtype=bool)
-            engine_tag = "FLAIR Threshold Baseline (Notice: best_unet.pt not found locally)"
-
-        # Generate red boundary overlay on normalized grayscale FLAIR
-        flair_ptp = np.ptp(flair) + 1e-8
-        base_gray = (255 * (flair - flair.min()) / flair_ptp).astype(np.uint8)
-        overlay = np.stack([base_gray] * 3, axis=-1)
-
-        # Draw red outline along tumor boundary
-        boundaries = find_boundaries(mask, mode="outer")
-        overlay[boundaries] = [255, 0, 0]
-
-        tumor_area = int(mask.sum())
-        total_pixels = mask.size
-        area_pct = (tumor_area / total_pixels) * 100
-
-        if tumor_area > 0:
-            result_text = (
-                f"✅ Tumor Detected\n"
-                f"• Model: {engine_tag}\n"
-                f"• Estimated Tumor Area: {tumor_area:,} pixels ({area_pct:.2f}% of slice)\n"
-                f"• Tumor boundary highlighted with red contour overlay."
-            )
-        else:
-            result_text = (
-                f"ℹ️ No Tumor Detected\n"
-                f"• Model: {engine_tag}\n"
-                f"• Zero pixels exceeded the detection confidence threshold."
-            )
-
-        return overlay, result_text
-
-    except Exception as err:
-        return None, f"Error processing MRI slice: {str(err)}"
-
-# Gradio Interface Definition
+# Load sample slices if present
 samples_dir = "samples"
-examples = []
+examples = None
 if os.path.isdir(samples_dir):
-    valid_extensions = (".tif", ".png", ".jpg", ".jpeg")
+    valid_exts = (".tif", ".png", ".jpg", ".jpeg")
     sample_files = [
         os.path.join(samples_dir, f) for f in sorted(os.listdir(samples_dir))
-        if f.lower().endswith(valid_extensions) and not f.endswith("_mask.tif")
+        if f.lower().endswith(valid_exts) and not f.endswith("_mask.tif")
     ]
     if sample_files:
-        examples = [[f] for f in sample_files[:6]]
+        examples = [[f] for f in sample_files]
 
 demo = gr.Interface(
-    fn=segment_mri,
-    inputs=gr.Image(label="Upload MRI Slice (FLAIR / Multimodal)", type="filepath"),
+    fn=segment,
+    inputs=gr.Image(label="Upload an MRI slice (3-channel .tif/.png)", type="filepath"),
     outputs=[
-        gr.Image(label="Segmentation Overlay (Red Outline)", type="numpy"),
-        gr.Textbox(label="Analysis & Quantitative Output", lines=4),
+        gr.Image(label="Tumor outline (Red)"),
+        gr.Textbox(label="Result"),
     ],
     title="🧠 Brain Tumor Segmentation (U-Net)",
-    description=(
-        "Automated semantic segmentation of low-grade gliomas (LGG) on brain MRI slices using a deep U-Net architecture. "
-        "Upload a 3-channel MRI slice (.tif, .png) to segment tumor tissue with high precision."
-    ),
-    article=(
-        "**Note on Weights**: Place `best_unet.pt` in the root directory next to `app.py`. If missing, the app uses the FLAIR threshold baseline.\n\n"
-        "**Disclaimer**: This demo is intended for academic and research evaluation only. It is not an FDA/CE-approved medical device."
-    ),
-    examples=examples if len(examples) > 0 else None,
+    description="Research demo on the LGG MRI dataset using U-Net (ResNet-34). Not a medical device.",
+    article="**Note**: Requires `best_unet.pt` placed in the project root directory.",
+    examples=examples,
 )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    demo.launch(server_name="0.0.0.0", server_port=7860)

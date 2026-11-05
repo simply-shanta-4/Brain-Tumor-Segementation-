@@ -85,14 +85,14 @@ pip install -r requirements.txt
 
 ### 2. Download Model Weights (`best_unet.pt`)
 
-`app.py` loads the trained weights to perform deep U-Net inference. Download `best_unet.pt` and place it in the root directory next to `app.py`:
+`app.py` requires `best_unet.pt` in the project root to run inference. Download the weights and place them next to `app.py`:
 
 ```bash
-# Option A: Download from Hugging Face
+# Download from your Hugging Face model repository or Space:
 curl -L -o best_unet.pt "https://huggingface.co/simply-shanta-4/brain-tumor-segmentation/resolve/main/best_unet.pt"
 ```
 
-> **Note**: If `best_unet.pt` is not present, `app.py` will gracefully fall back to the FLAIR statistical thresholding heuristic so the interface remains functional, but downloading the weights is required for the full U-Net performance. Alternatively, generate your own weights by running `notebook.ipynb`.
+*(Alternatively, train the model yourself using `notebook.ipynb` to generate `best_unet.pt`.)*
 
 ### 3. Launch the Interactive Gradio Web Demo
 
@@ -102,7 +102,7 @@ Run the Gradio application locally (also ready for deployment to **Hugging Face 
 python app.py
 ```
 
-Open your browser at `http://localhost:7860` to upload any brain MRI slice and inspect the red tumor contour overlay.
+Open your browser at `http://localhost:7860` to upload an MRI slice and inspect the red tumor contour overlay.
 
 ### 4. Run the Full Training Pipeline
 
@@ -123,10 +123,9 @@ The pipeline implements:
 
 ## ⚠️ Limitations & Clinical Disclaimer
 
-- **Single-Source Cohort**: Trained and tested on 110 patients from a single collection (TCGA-LGG), with no external multi-center cross-validation on disparate scanner hardware or protocols.
-- **Per-Patient Score Variance**: While the median test Dice is **0.870**, performance varies across individual patient anatomies: the worst test patients scored **0.47**, **0.49**, and **0.60** Dice.
-- **Failure Mode Analysis**: These lower scores occurred primarily on patients with very small, faint, or peripheral low-contrast lesions spanning only 1–2 peripheral slices; in such small pixel areas, a boundary difference of just a few pixels severely penalizes the volume-level Dice coefficient. Slices with non-standard FLAIR intensity gradients or partial-volume artifacts also showed higher boundary ambiguity.
-- **2D Slice Approximation**: Slices are segmented in the 2D axial plane; the model does not exploit full 3D through-plane volumetric context (e.g., 3D NIfTI convolutions).
+- **Single-Source Cohort**: Trained and tested on 110 patients from a single collection (TCGA-LGG), with no external validation across different scanner hardware or hospital protocols.
+- **Per-Patient Score Variance**: While the median test Dice is **0.870**, performance varies across individual patient volumes: the worst test patients scored **0.47**, **0.49**, and **0.60** Dice (likely due to small or low-contrast lesions, not yet verified).
+- **2D Slice Approximation**: Slices are segmented in the 2D axial plane; the model does not exploit full 3D through-plane volumetric continuity (e.g., 3D volumetric convolutions).
 - **Research Prototype Only**: This software is developed solely for academic research, education, and benchmark evaluation. It is **not** an FDA- or CE-cleared medical device and must not be used for primary clinical diagnostics or treatment decisions.
 
 ---
