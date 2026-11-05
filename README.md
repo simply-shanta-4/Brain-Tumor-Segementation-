@@ -30,21 +30,34 @@ Evaluated across held-out test patients (slices containing both tumor and health
 
 ---
 
+## 🔬 Dataset & Modality Overview
+
+The model is trained on 3,929 brain MRI slices across 110 patients from TCGA. Each sample includes multimodal sequences (pre-contrast T1, FLAIR, post-contrast T1) and expert-annotated tumor masks:
+
+<p align="center">
+  <img src="assets/dataset_overview.png" alt="Dataset Modality Overview" width="700"/>
+</p>
+
+---
+
 ## 📁 Repository Structure
 
 ```text
 ├── assets/
-│   └── demo.png            # Visual demo & segmentation overview for README
+│   ├── demo.png                          # U-Net prediction demo banner with red outline
+│   ├── dataset_overview.png              # Multimodal MRI sequence & mask exploration grid
+│   └── tumor_outline.png                 # Standalone raw slice with tumor boundary overlay
 ├── samples/
-│   ├── sample_slice_01_tumor.png     # Example MRI slice with visible tumor
-│   └── sample_slice_02_healthy.png   # Example healthy control MRI slice
-├── .gitignore              # Clean ignore list (weights, raw datasets, cache)
-├── LICENSE                 # MIT Open-Source License
-├── README.md               # Project documentation, results, and quickstart
-├── app.py                  # Gradio web app & Hugging Face Spaces entry point
-├── notebook.ipynb          # Full pipeline (data prep, split, training, eval)
-├── requirements.txt        # Pinned core dependencies
-└── results.csv             # Benchmark evaluation metrics
+│   ├── sample_patient_01_tumor.png       # Real patient slice with low-grade glioma
+│   ├── sample_patient_02.png             # Real patient slice with small lesion
+│   └── sample_patient_03_tcga.png        # Real test patient slice (TCGA-CS-4941)
+├── .gitignore                            # Clean ignore list (weights, raw datasets, cache)
+├── LICENSE                               # MIT Open-Source License
+├── README.md                             # Project documentation, results, and quickstart
+├── app.py                                # Gradio web app & Hugging Face Spaces entry point
+├── notebook.ipynb                        # Full pipeline (data prep, split, training, eval)
+├── requirements.txt                      # Pinned core dependencies
+└── results.csv                           # Benchmark evaluation metrics
 ```
 
 ---
@@ -88,7 +101,7 @@ Launch Jupyter or execute the complete notebook pipeline:
 jupyter notebook notebook.ipynb
 ```
 
-The notebook covers:
+The pipeline implements:
 - **Data Ingestion**: Exploration of 3,929 FLAIR/multimodal slices across 110 patients.
 - **Patient-Level Splitting**: `GroupShuffleSplit` (80/20 train-val/test, then 85/15 train/val) ensuring slices from the same patient never appear across splits.
 - **FLAIR Baseline**: Statistical intensity thresholding with morphological erosion.
