@@ -19,7 +19,7 @@ Detecting and outlining tumor boundaries on brain MRI scans is vital for surgica
 
 ## 📊 Benchmark Results
 
-Evaluated across held-out test patients (slices containing both tumor and healthy tissue):
+Evaluated across **22 held-out test patients, Dice computed per patient volume** (slices containing both tumor and healthy tissue):
 
 | Method / Model | Mean Dice Score ↑ | Median Dice Score ↑ | False Alarms on Tumor-Free Slices ↓ | Total Empty Slices |
 | :--- | :---: | :---: | :---: | :---: |
@@ -66,10 +66,10 @@ The model is trained on 3,929 brain MRI slices across 110 patients from TCGA. Ea
 
 ### 1. Environment Setup
 
-Clone the repository and install the required dependencies:
+Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/your-username/brain-tumor-segmentation.git
+git clone https://github.com/simply-shanta-4/brain-tumor-segmentation.git
 cd "brain-tumor-segmentation"
 
 # Create and activate a virtual environment
@@ -83,7 +83,18 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Launch the Interactive Gradio Web Demo
+### 2. Download Model Weights (`best_unet.pt`)
+
+`app.py` loads the trained weights to perform deep U-Net inference. Download `best_unet.pt` and place it in the root directory next to `app.py`:
+
+```bash
+# Option A: Download from Hugging Face
+curl -L -o best_unet.pt "https://huggingface.co/simply-shanta-4/brain-tumor-segmentation/resolve/main/best_unet.pt"
+```
+
+> **Note**: If `best_unet.pt` is not present, `app.py` will gracefully fall back to the FLAIR statistical thresholding heuristic so the interface remains functional, but downloading the weights is required for the full U-Net performance. Alternatively, generate your own weights by running `notebook.ipynb`.
+
+### 3. Launch the Interactive Gradio Web Demo
 
 Run the Gradio application locally (also ready for deployment to **Hugging Face Spaces**):
 
@@ -93,7 +104,7 @@ python app.py
 
 Open your browser at `http://localhost:7860` to upload any brain MRI slice and inspect the red tumor contour overlay.
 
-### 3. Run the Training Pipeline
+### 4. Run the Full Training Pipeline
 
 Launch Jupyter or execute the complete notebook pipeline:
 
@@ -112,9 +123,11 @@ The pipeline implements:
 
 ## ⚠️ Limitations & Clinical Disclaimer
 
-- **Research Prototype Only**: This software is developed solely for academic research, education, and benchmark evaluation. It is **not** an FDA- or CE-cleared medical device and must not be used for primary clinical diagnostics or treatment planning.
-- **2D Slice Approximation**: Slices are segmented in 2D plane; it does not model the full 3D volumetric continuity of 3D MRI scans (e.g. volumetric NIfTI volumes).
-- **Scanner & Sequence Variability**: Performance is benchmarked on the LGG dataset. Scans acquired with different field strengths (e.g., 1.5T vs. 3.0T) or non-standard FLAIR weighting may require domain adaptation or fine-tuning.
+- **Single-Source Cohort**: Trained and tested on 110 patients from a single collection (TCGA-LGG), with no external multi-center cross-validation on disparate scanner hardware or protocols.
+- **Per-Patient Score Variance**: While the median test Dice is **0.870**, performance varies across individual patient anatomies: the worst test patients scored **0.47**, **0.49**, and **0.60** Dice.
+- **Failure Mode Analysis**: These lower scores occurred primarily on patients with very small, faint, or peripheral low-contrast lesions spanning only 1–2 peripheral slices; in such small pixel areas, a boundary difference of just a few pixels severely penalizes the volume-level Dice coefficient. Slices with non-standard FLAIR intensity gradients or partial-volume artifacts also showed higher boundary ambiguity.
+- **2D Slice Approximation**: Slices are segmented in the 2D axial plane; the model does not exploit full 3D through-plane volumetric context (e.g., 3D NIfTI convolutions).
+- **Research Prototype Only**: This software is developed solely for academic research, education, and benchmark evaluation. It is **not** an FDA- or CE-cleared medical device and must not be used for primary clinical diagnostics or treatment decisions.
 
 ---
 
