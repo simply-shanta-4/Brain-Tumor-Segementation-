@@ -19,7 +19,7 @@ Detecting and outlining tumor boundaries on brain MRI scans is vital for surgica
 
 ## 📊 Benchmark Results
 
-Evaluated across **22 held-out test patients, Dice computed per patient volume** (slices containing both tumor and healthy tissue) under a reproducible fixed seed (`SEED = 42`):
+Evaluated across **22 held-out test patients, Dice computed per patient volume** (slices containing both tumor and healthy tissue):
 
 | Method / Model | Mean Dice Score ↑ | 95% Bootstrap CI | Median Dice Score ↑ | False Alarms on Tumor-Free Slices ↓ | Total Empty Slices |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -64,7 +64,7 @@ The model is trained on 3,929 brain MRI slices across 110 patients from TCGA. Ea
 ├── LICENSE                               # MIT Open-Source License
 ├── README.md                             # Project documentation, results, and quickstart
 ├── app.py                                # Gradio web app & Hugging Face Spaces entry point
-├── brain_tumor_notebook_v4.ipynb         # End-to-end pipeline (reproducible seed, training, CI, failure analysis, post-processing)
+├── brain_tumor_notebook_v4.ipynb         # Full pipeline (reproducible seed, training, CI, failure analysis, post-processing)
 ├── requirements.txt                      # Pinned core dependencies
 └── results.csv                           # Benchmark evaluation metrics
 ```
@@ -78,8 +78,8 @@ The model is trained on 3,929 brain MRI slices across 110 patients from TCGA. Ea
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/simply-shanta-4/brain-tumor-segmentation.git
-cd "brain-tumor-segmentation"
+git clone https://github.com/simply-shanta-4/Brain-Tumor-Segementation-.git
+cd Brain-Tumor-Segementation-
 
 # Create and activate a virtual environment
 python -m venv venv
@@ -92,12 +92,14 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Download Model Weights (`best_unet.pt`)
+### 2. Download the model weights
 
-`app.py` requires `best_unet.pt` in the project root to run inference. Download the weights and place them next to `app.py`:
+`app.py` needs the trained weights. Download `best_unet.pt` from:
+https://huggingface.co/simply-shanta-4/brain-tumor-segmentation/resolve/main/best_unet.pt
+and place it next to `app.py`.
 
 ```bash
-# Download from your Hugging Face model repository or Space:
+# Using curl:
 curl -L -o best_unet.pt "https://huggingface.co/simply-shanta-4/brain-tumor-segmentation/resolve/main/best_unet.pt"
 ```
 
@@ -111,7 +113,7 @@ Run the Gradio application locally (also ready for deployment to **Hugging Face 
 python app.py
 ```
 
-Open your browser at `http://localhost:7860` to upload an MRI slice and inspect the red tumor contour overlay.
+Open your browser at `http://localhost:7860` (or `http://127.0.0.1:7860`) to upload an MRI slice and inspect the red tumor contour overlay.
 
 ### 4. Run the Full Training & Evaluation Pipeline
 
@@ -135,37 +137,23 @@ The pipeline implements:
 
 ## ⚠️ Limitations & Clinical Disclaimer
 
-### 1. Verified Failure Mode: Boundary Leaking & Over-Segmentation
-Earlier hypotheses speculated that poor test scores stemmed from small, faint, or missed lesions. However, empirical failure analysis in `brain_tumor_notebook_v4.ipynb` across the lowest-scoring test cases identified the actual mechanism: **substantial over-segmentation and false boundary expansion into surrounding hyperintense tissue (edema / diffuse FLAIR signal)**.
+- **Single-Source Cohort**: Trained and tested on 110 patients from a single collection (TCGA-LGG), with no external validation across different scanner hardware, magnetic field strengths (1.5T vs. 3T), or hospital acquisition protocols.
+- **Per-Patient Variance & Over-Prediction**: Results vary by patient (the worst test patients scored about 0.4 Dice); the model tends to over-predict tumor area on them:
+  - `TCGA_DU_5852_19950709` (Dice: 0.40): Ground truth had 5,083 tumor pixels across 8 slices; model predicted 19,155 pixels (**3.77× over-prediction**).
+  - `TCGA_FG_6692_20020606` (Dice: 0.41): Ground truth had 7,115 tumor pixels across 7 slices; model predicted 21,969 pixels (**3.09× over-prediction**).
+  - `TCGA_HT_7602_19951103` (Dice: 0.64): Ground truth had 6,946 tumor pixels across 7 slices; model predicted 13,607 pixels (**1.96× over-prediction**).
+  In these cases, non-enhancing peritumoral edema or diffuse hyperintensity shares intensity profiles with the tumor core in FLAIR, causing the model's predictions to bleed into surrounding tissue.
 
 <p align="center">
   <img src="assets/failure_cases.png" alt="Empirical Failure Case Analysis on Worst Test Patients" width="750"/>
   <br>
-  <em>Failure analysis on the 3 worst test patients: Ground truth contour in <b>green</b>, model prediction in <b>red</b>. In all three cases, the model captures the tumor core but expands extensively into surrounding FLAIR-hyperintense tissue.</em>
+  <em>Failure analysis on the 3 worst test patients: Ground truth contour in <b>green</b>, model prediction in <b>red</b>. The model captures the tumor core but expands into surrounding FLAIR-hyperintense tissue.</em>
 </p>
 
-Quantitative breakdown of the 3 lowest-scoring test patient volumes:
-- **`TCGA_DU_5852_19950709` (Dice: 0.40)**: Ground truth had 5,083 tumor pixels across 8 slices; the model predicted 19,155 pixels (**3.77× over-prediction**).
-- **`TCGA_FG_6692_20020606` (Dice: 0.41)**: Ground truth had 7,115 tumor pixels across 7 slices; the model predicted 21,969 pixels (**3.09× over-prediction**).
-- **`TCGA_HT_7602_19951103` (Dice: 0.64)**: Ground truth had 6,946 tumor pixels across 7 slices; the model predicted 13,607 pixels (**1.96× over-prediction**).
-
-In each instance, non-enhancing peritumoral edema or diffuse hyperintensity shares intensity profiles with the tumor core in FLAIR, causing the 2D U-Net to bleed across boundaries.
-
-### 2. Per-Patient Score Variance & Confidence Intervals
-While the median patient volume Dice score is **0.839**, volume-level scores range from **0.400** to **0.950+**. 
-Bootstrap resampling (1,000 iterations) indicates a **95% confidence interval of [0.746, 0.868]** around the mean Dice of **0.812** ($n=22$ patients). The long lower tail highlights sensitivity to patient-specific acquisition contrast and tumor margin conspicuity.
-
-### 3. 2D Slice Approximation vs. 3D Volumetric Continuity
-Inference is conducted slice-by-slice in the 2D axial plane ($256 \times 256 \times 3$). The network does not exploit through-plane (z-axis) spatial continuity. As a result, marginal slices near the superior and inferior tumor poles exhibit higher boundary ambiguity and lack 3D spatial smoothness constraints that a 3D volumetric model (e.g., 3D nnU-Net) would enforce.
-
-### 4. Single-Cohort Dataset & Generalization Constraints
-All 110 patients are drawn from a single public collection (**TCGA-LGG**). The model has not been evaluated on external multi-center cohorts with varying scanner manufacturers (Siemens, Philips, GE), variable field strengths (1.5T vs. 3T), or different acquisition parameter protocols. Performance may degrade on out-of-distribution scanner data or on high-grade gliomas (HGG/glioblastoma).
-
-### 5. False Alarms on Tumor-Free Slices & Post-Processing
-On healthy brain slices with no tumor, the raw model produced false positive detections on **23 out of 483 slices (4.8%)**. Tuning morphological area filtering (`remove_small_objects(min_area=200)`) on validation data reduced validation false alarms from 5/269 to 1/269. However, post-processing cannot resolve large contiguous false positives that attach directly to the main lesion boundary.
-
-### 6. Clinical Decision Support Disclaimer
-This repository is developed strictly for **academic research, educational demonstrations, and benchmark reproducibility**. It is **not** an FDA- or CE-cleared medical device and must never be utilized for primary medical diagnosis, clinical triage, surgical margin resection, or radiotherapy treatment planning.
+- **Missing Modality Robustness**: Some slices lack a FLAIR sequence, and the demo warns when this happens (falling back to the highest-contrast available channel, which may reduce prediction reliability).
+- **2D Slice Approximation**: Slices are segmented in the 2D axial plane ($256 \times 256 \times 3$); the model does not exploit full 3D through-plane volumetric continuity (e.g., 3D convolutions), leading to higher boundary ambiguity at superior and inferior tumor margins.
+- **False Alarms on Empty Slices**: Raw predictions triggered false alarms on 23 out of 483 tumor-free slices (4.8%). While morphological post-processing (`remove_small_objects(min_area=200)`) eliminates small disconnected false positives, it cannot resolve large contiguous false positives contiguous with tissue margins.
+- **Research Prototype Only**: This software is developed solely for academic research, education, and benchmark evaluation. It is **not** an FDA- or CE-cleared medical device and must not be used for primary clinical diagnostics, tumor margin resection, or treatment decisions.
 
 ---
 
